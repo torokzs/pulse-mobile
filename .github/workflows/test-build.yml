@@ -1,0 +1,54 @@
+# Fork-only test build: an installable APK of this branch, to try a change on a phone before a pull request.
+# It lives only on the test/foundry-build branch of the fork and is not part of any pull request.
+name: Test build
+
+on:
+  push:
+    branches: [test/foundry-build]
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: test apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: pnpm install --frozen-lockfile
+      - run: echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+      # Its own package id and name, so it installs beside the released app instead of replacing it.
+      - name: rename the test app
+        run: |
+          node -e '
+            const fs = require("fs");
+            const j = JSON.parse(fs.readFileSync("app.json", "utf8"));
+            j.expo.name = "Pulse Test";
+            j.expo.android.package = "in.portlabs.pulse.foundrytest";
+            fs.writeFileSync("app.json", JSON.stringify(j, null, 2) + "\n");
+          '
+      - run: npx expo prebuild --platform android --no-install
+        env:
+          CI: 1
+      # One ABI (arm64 phones) and legacy packaging, as the project's own sideload profile in eas.json. No Sentry
+      # variables are set, so this build uploads nothing and sends no error reports.
+      - run: ./gradlew :app:assembleRelease --console=plain -PreactNativeArchitectures=arm64-v8a -Pexpo.useLegacyPackaging=true
+        working-directory: android
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pulse-test-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
