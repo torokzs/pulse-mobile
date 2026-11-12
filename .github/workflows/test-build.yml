@@ -13,7 +13,7 @@ jobs:
   apk:
     name: test apk
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,6 +42,12 @@ jobs:
       - run: npx expo prebuild --platform android --no-install
         env:
           CI: 1
+      # The generated gradle.properties caps the build at 512 MB of metaspace, which the release minify step runs out
+      # of. The user-level file wins over the project's.
+      - name: give gradle more memory
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g" >> ~/.gradle/gradle.properties
       # One ABI (arm64 phones) and legacy packaging, as the project's own sideload profile in eas.json. No Sentry
       # variables are set, so this build uploads nothing and sends no error reports.
       - run: ./gradlew :app:assembleRelease --console=plain -PreactNativeArchitectures=arm64-v8a -Pexpo.useLegacyPackaging=true
